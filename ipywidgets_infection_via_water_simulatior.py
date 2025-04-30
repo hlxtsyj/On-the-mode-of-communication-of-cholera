@@ -4,9 +4,9 @@ from ipywidgets import interact, IntSlider, FloatSlider, Play, VBox, HBox, inter
 import ipywidgets as widgets
 import math
 
-# -----------------------------
+
 # 1. 读入背景地图并设置模拟区域
-# -----------------------------
+
 
 # 读取地图图像 (请使用自己的图片文件名)
 # 例如在同级目录放一张名为 london_map.png 的地图
@@ -26,11 +26,9 @@ GRID_SIZE = 50
 dx = 100 / GRID_SIZE  # 将[0,100]划分成 GRID_SIZE 等份
 dy = 100 / GRID_SIZE
 
-# -----------------------------
 # 2. 定义初始条件
-# -----------------------------
 
-# 人口密度：随机生成 [0,1]，也可以根据历史数据/城市布局进行赋值
+# 人口密度：随机生成 [0,1]，也可以根据历史数据城市布局进行赋值
 np.random.seed(42)
 population_density = np.random.rand(GRID_SIZE, GRID_SIZE)
 
@@ -41,18 +39,15 @@ pump_locations = [(25, 25), (30, 35)]  # 可以自定义：在(25,25)、(30,35)�
 for (px, py) in pump_locations:
     water_contamination[px, py] = 1
 
-# 感染状态：0=健康，1=感染
 infection_status = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
 
-# 随机放置一些初始病例
 infection_init_count = 5
 for _ in range(infection_init_count):
     rx, ry = np.random.randint(0, GRID_SIZE, size=2)
     infection_status[rx, ry] = 1
 
-# -----------------------------
 # 3. 定义传播规则
-# -----------------------------
+
 def update_infection(infection_status, base_infection_rate, water_infection_boost,
                      recovery_rate, population_density_factor):
     """
@@ -91,9 +86,7 @@ def update_infection(infection_status, base_infection_rate, water_infection_boos
                         new_infection_status[x, y] = 1
     return new_infection_status
 
-# -----------------------------
 # 4. 可视化
-# -----------------------------
 def plot_map(infection_status, step):
     """
     在背景地图上叠加显示感染状态、标注水泵
@@ -135,9 +128,8 @@ def plot_map(infection_status, step):
     plt.gca().invert_yaxis()  # 若地图本身是自上而下
     plt.show()
 
-# -----------------------------
 # 5. 交互式 UI
-# -----------------------------
+
 base_infection_slider = FloatSlider(value=0.02, min=0.0, max=0.2, step=0.01, description='Base Rate')
 water_infection_boost_slider = FloatSlider(value=0.1, min=0.0, max=0.5, step=0.01, description='Water Boost')
 recovery_rate_slider = FloatSlider(value=0.05, min=0.0, max=0.5, step=0.01, description='Recovery Rate')
