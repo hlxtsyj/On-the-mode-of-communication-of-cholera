@@ -1,0 +1,224 @@
+import pygame
+import sys
+import numpy as np
+import random
+
+
+WINDOW_WIDTH = 800
+WINDOW_HEIGHT = 600
+GRID_SIZE = 60           # 网格宽和高（在 x,y 方向上各 60 个单元）
+TILE_SIZE = 10           # 每个网格单元在屏幕上占多少像素
+FPS = 30                 # 帧率
+BG_COLOR = (200, 200, 200)
+
+COLOR_HEALTHY = (0, 100, 255)    # 健康：蓝色
+COLOR_INFECTED = (255, 0, 0)     # 感染：红色
+COLOR_PUMP = (0, 0, 0)           # 污染水源：黑色
+COLOR_ROAD = (180, 180, 180)     # 道路
+COLOR_TEXT = (0, 0, 0)           # 文本：黑色
+
+# 传播相关参数(可在模拟中动态修改)
+base_infection_rate = 0.02      # 基础感染率
+water_infection_boost = 0.1     # 水源污染增量
+recovery_rate = 0.05            # 康复率
+population_density_factor = 0.3 # 人口密度影响系数
+
+# 初始化网格状态
+# -----------------------------
+population_density = np.random.rand(GRID_SIZE, GRID_SIZE)      # 人口密度 [0,1]
+water_contamination = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)  # 是否有污染水源
+infection_status = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)     # 0=健康, 1=感染
+
+# 在随机位置放若干初始感染者
+for _ in range(8):
+    rx, ry = random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1)
+    infection_status[rx, ry] = 1
+
+# 为简化地图：随机一些“道路”或“建筑”形状
+# 如果想自己绘制，可注释以下逻辑并改用鼠标/键盘交互
+road_map = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)  # 0=无路,1=路
+for i in range(GRID_SIZE):
+    for j in range(GRID_SIZE):
+        # 简单随机，让一定概率地方成为道路
+        if random.random() < 0.15:
+            road_map[i, j] = 1
+
+# -----------------------------
+# 函数：更新感染
+# -----------------------------
+def update_infection():
+    global infection_status
+    new_status = infection_status.copy()
+    
+    neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1),
+                 (-1, -1), (-1, 1), (1, -1), (1, 1)]
+    
+    for x in range(GRID_SIZE):
+        for y in range(GRID_SIZE):
+            if infection_status[x, y] == 1:
+                # 已感染的有一定概率康复（或死亡），不再传染
+                if random.random() < recovery_rate:
+                    new_status[x, y] = 0
+                else:
+                    new_status[x, y] = 1
+            else:
+                # 计算周围是否存在感染
+                infected_neighbors = 0
+                for dx, dy in neighbors:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                        if infection_status[nx, ny] == 1:
+                            infected_neighbors += 1
+                
+                if infected_neighbors > 0:
+                    # 感染概率  = 基础感染率 + (水泵污染 * water_infection_boost) + (人口密度 * population_density_factor)
+                    prob = (base_infection_rate
+                            + water_infection_boost * water_contamination[x, y]
+                            + population_density_factor * population_density[x, y])
+                    # 根据邻居数进行一定增量
+                    prob *= (1 + 0.1 * infected_neighbors)
+                    
+                    if random.random() < prob:
+                        new_status[x, y] = 1
+    
+    infection_status = new_status
+
+# -----------------------------
+# 函数：绘制整张地图
+# -----------------------------
+def draw_map(screen):
+    # 背景
+    screen.fill(BG_COLOR)
+    
+    # 先画网格(道路/建筑)
+    for x in range(GRID_SIZE):
+        for y in range(GRID_SIZE):
+            # 计算在屏幕上的坐标
+            rect_x = x * TILE_SIZE
+            rect_y = y * TILE_SIZE
+            
+            # 简易判断：若 road_map[x,y]=1，这里画浅灰代表道路，否则略深的灰代表建筑
+            if road_map[x, y] == 1:
+                color = COLOR_ROAD
+            else:
+                color = (150, 150, 150)
+            
+            pygame.draw.rect(screen, color, (rect_x, rect_y, TILE_SIZE, TILE_SIZE))
+    
+    # 再画人口（健康/感染）、受污染水源
+    for x in range(GRID_SIZE):
+        for y in range(GRID_SIZE):
+            rect_x = x * TILE_SIZE
+            rect_y = y * TILE_SIZE
+            
+            # 画出污染水源
+            if water_contamination[x, y] == 1:
+                pygame.draw.rect(screen, COLOR_PUMP, (rect_x, rect_y, TILE_SIZE, TILE_SIZE))
+            
+            # 画出感染状态
+            if infection_status[x, y] == 1:
+                # 感染者
+                pygame.draw.rect(screen, COLOR_INFECTED, (rect_x+2, rect_y+2, TILE_SIZE-4, TILE_SIZE-4))
+            else:
+                # 健康者：也可用较淡的蓝色或者仅在一定人口密度下画
+                # 这里根据人口密度来决定是否画一个小点
+                if population_density[x, y] > 0.5:
+                    # 用半径大小体现人口稠密
+                    radius = int( (population_density[x,y]) * (TILE_SIZE/2) )
+                    pygame.draw.circle(screen, COLOR_HEALTHY, (rect_x + TILE_SIZE//2, rect_y + TILE_SIZE//2), max(1, radius))
+
+# -----------------------------
+# 函数：在屏幕上显示参数
+# -----------------------------
+def draw_info(screen, font):
+    text_y = 10
+    texts = [
+        f"Base Infection Rate: {base_infection_rate:.3f} (Press Q/W to +/-)",
+        f"Water Infection Boost: {water_infection_boost:.3f} (Press A/S to +/-)",
+        f"Recovery Rate: {recovery_rate:.3f} (Press Z/X to +/-)",
+        f"Population Density Factor: {population_density_factor:.3f} (Press E/D to +/-)",
+        "Press [Space] to add Pump at mouse, [R] to reset some infected",
+        "Press [Esc] or [Close] to exit.",
+    ]
+    for t in texts:
+        text_surface = font.render(t, True, COLOR_TEXT)
+        screen.blit(text_surface, (10, text_y))
+        text_y += 25
+
+# -----------------------------
+# 游戏主函数
+# -----------------------------
+def main():
+    global base_infection_rate, water_infection_boost, recovery_rate, population_density_factor
+    
+    pygame.init()
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("John Snow Cholera Spread Simulation - Game Version")
+    clock = pygame.time.Clock()
+    
+    # 字体
+    font = pygame.font.SysFont(None, 20)
+    
+    running = True
+    while running:
+        clock.tick(FPS)  # 控制帧率
+        
+        # 处理事件
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                
+                # 改变参数
+                elif event.key == pygame.K_q:  # 调整 base_infection_rate
+                    base_infection_rate = max(0, base_infection_rate - 0.01)
+                elif event.key == pygame.K_w:
+                    base_infection_rate = min(1, base_infection_rate + 0.01)
+                
+                elif event.key == pygame.K_a:
+                    water_infection_boost = max(0, water_infection_boost - 0.01)
+                elif event.key == pygame.K_s:
+                    water_infection_boost = min(1, water_infection_boost + 0.01)
+                
+                elif event.key == pygame.K_z:
+                    recovery_rate = max(0, recovery_rate - 0.01)
+                elif event.key == pygame.K_x:
+                    recovery_rate = min(1, recovery_rate + 0.01)
+                
+                elif event.key == pygame.K_e:
+                    population_density_factor = max(0, population_density_factor - 0.05)
+                elif event.key == pygame.K_d:
+                    population_density_factor = min(2, population_density_factor + 0.05)
+                
+                # 在地图上重置若干随机感染
+                elif event.key == pygame.K_r:
+                    for _ in range(5):
+                        rx, ry = random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1)
+                        infection_status[rx, ry] = 1
+                
+                # 在鼠标处加一个污染水源
+                elif event.key == pygame.K_SPACE:
+                    mx, my = pygame.mouse.get_pos()
+                    # 转换成网格坐标
+                    gx = mx // TILE_SIZE
+                    gy = my // TILE_SIZE
+                    if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+                        water_contamination[gx, gy] = 1
+                        
+        # 更新数据
+        update_infection()
+        
+        # 绘制
+        draw_map(screen)
+        draw_info(screen, font)
+        
+        pygame.display.flip()
+    
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
